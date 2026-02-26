@@ -138,5 +138,6 @@
 +else:
 +    st.info("Enter your connection details in the sidebar and click Connect.")
  
-EOF
-)
+ EOF
+ )
+
