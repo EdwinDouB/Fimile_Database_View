@@ -21,8 +21,6 @@ if "tables" not in st.session_state:
     st.session_state.tables = []
 if "connected_database" not in st.session_state:
     st.session_state.connected_database = ""
-if "databases" not in st.session_state:
-    st.session_state.databases = []
 
 
 def run_query(sql: str, params=None) -> pd.DataFrame:
@@ -48,9 +46,6 @@ def connect_and_load() -> None:
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True,
     )
-
-    dbs = run_query("SHOW DATABASES")
-    st.session_state.databases = dbs.iloc[:, 0].tolist()
 
     current_db = run_query("SELECT DATABASE() AS db_name")
     st.session_state.connected_database = current_db.loc[0, "db_name"] or DEFAULT_DB_CONFIG["database"]
@@ -83,20 +78,7 @@ if st.session_state.conn:
 
     with left_col:
         st.subheader("Schema")
-        selected_db = st.selectbox(
-            "Database",
-            options=st.session_state.databases,
-            index=(
-                st.session_state.databases.index(st.session_state.connected_database)
-                if st.session_state.connected_database in st.session_state.databases
-                else 0
-            ),
-        )
-
-        if selected_db != st.session_state.connected_database:
-            st.session_state.connected_database = selected_db
-            st.session_state.conn.select_db(selected_db)
-            load_tables(selected_db)
+        st.text(f"Active database: {st.session_state.connected_database}")
 
         selected_table = st.selectbox("Table", options=st.session_state.tables) if st.session_state.tables else None
 
