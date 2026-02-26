@@ -3,20 +3,17 @@ import pymysql
 import streamlit as st
 
 
+DEFAULT_DB_CONFIG = {
+    "host": "47.253.206.87",
+    "port": 3306,
+    "user": "webreader",
+    "password": "T!Q3-Vy28nb$61598925243649",
+    "database": "wyaoo",
+}
+
 st.set_page_config(page_title="Fimile-Tweak DB Browser", layout="wide")
 st.title("Fimile-Tweak Database Browser")
-st.caption("Connect to your Fimile-Tweak MySQL database and browse tables safely.")
-
-
-with st.sidebar:
-    st.header("Connection")
-    host = st.text_input("Host", value="localhost")
-    port = st.number_input("Port", min_value=1, max_value=65535, value=3306, step=1)
-    user = st.text_input("Username", value="root")
-    password = st.text_input("Password", type="password")
-    database = st.text_input("Database (optional)", value="")
-    connect_btn = st.button("Connect", use_container_width=True)
-
+st.caption("Connected automatically to the Fimile-Tweak database.")
 
 if "conn" not in st.session_state:
     st.session_state.conn = None
@@ -24,44 +21,61 @@ if "tables" not in st.session_state:
     st.session_state.tables = []
 if "connected_database" not in st.session_state:
     st.session_state.connected_database = ""
+if "databases" not in st.session_state:
+    st.session_state.databases = []
 
 
 def run_query(sql: str, params=None) -> pd.DataFrame:
     return pd.read_sql(sql, st.session_state.conn, params=params)
 
 
-if connect_btn:
+def load_tables(database_name: str) -> None:
+    tables_df = run_query(
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s ORDER BY TABLE_NAME",
+        params=[database_name],
+    )
+    st.session_state.tables = tables_df["TABLE_NAME"].tolist()
+
+
+def connect_and_load() -> None:
+    st.session_state.conn = pymysql.connect(
+        host=DEFAULT_DB_CONFIG["host"],
+        port=DEFAULT_DB_CONFIG["port"],
+        user=DEFAULT_DB_CONFIG["user"],
+        password=DEFAULT_DB_CONFIG["password"],
+        database=DEFAULT_DB_CONFIG["database"],
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=True,
+    )
+
+    dbs = run_query("SHOW DATABASES")
+    st.session_state.databases = dbs.iloc[:, 0].tolist()
+
+    current_db = run_query("SELECT DATABASE() AS db_name")
+    st.session_state.connected_database = current_db.loc[0, "db_name"] or DEFAULT_DB_CONFIG["database"]
+
+    if st.session_state.connected_database:
+        load_tables(st.session_state.connected_database)
+
+
+with st.sidebar:
+    st.header("Connection")
+    st.text(f"Host: {DEFAULT_DB_CONFIG['host']}")
+    st.text(f"Port: {DEFAULT_DB_CONFIG['port']}")
+    st.text(f"User: {DEFAULT_DB_CONFIG['user']}")
+    st.text(f"Database: {DEFAULT_DB_CONFIG['database']}")
+    reconnect_btn = st.button("Reconnect", use_container_width=True)
+
+
+if st.session_state.conn is None or reconnect_btn:
     try:
-        st.session_state.conn = pymysql.connect(
-            host=host,
-            port=int(port),
-            user=user,
-            password=password,
-            database=database or None,
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=True,
-        )
-        st.success("Connected successfully.")
-
-        dbs = run_query("SHOW DATABASES")
-        st.session_state.databases = dbs.iloc[:, 0].tolist()
-
-        if database:
-            st.session_state.connected_database = database
-        else:
-            current_db = run_query("SELECT DATABASE() AS db_name")
-            st.session_state.connected_database = current_db.loc[0, "db_name"] or ""
-
-        if st.session_state.connected_database:
-            tables_df = run_query(
-                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s ORDER BY TABLE_NAME",
-                params=[st.session_state.connected_database],
-            )
-            st.session_state.tables = tables_df["TABLE_NAME"].tolist()
+        connect_and_load()
+        if reconnect_btn:
+            st.success("Reconnected successfully.")
     except Exception as e:
         st.session_state.conn = None
-        st.error(f"Connection failed: {e}")
+        st.error(f"Auto-connection failed: {e}")
 
 
 if st.session_state.conn:
@@ -69,25 +83,20 @@ if st.session_state.conn:
 
     with left_col:
         st.subheader("Schema")
-        if "databases" in st.session_state:
-            selected_db = st.selectbox(
-                "Database",
-                options=st.session_state.databases,
-                index=(
-                    st.session_state.databases.index(st.session_state.connected_database)
-                    if st.session_state.connected_database in st.session_state.databases
-                    else 0
-                ),
-            )
+        selected_db = st.selectbox(
+            "Database",
+            options=st.session_state.databases,
+            index=(
+                st.session_state.databases.index(st.session_state.connected_database)
+                if st.session_state.connected_database in st.session_state.databases
+                else 0
+            ),
+        )
 
-            if selected_db != st.session_state.connected_database:
-                st.session_state.connected_database = selected_db
-                st.session_state.conn.select_db(selected_db)
-                tables_df = run_query(
-                    "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s ORDER BY TABLE_NAME",
-                    params=[selected_db],
-                )
-                st.session_state.tables = tables_df["TABLE_NAME"].tolist()
+        if selected_db != st.session_state.connected_database:
+            st.session_state.connected_database = selected_db
+            st.session_state.conn.select_db(selected_db)
+            load_tables(selected_db)
 
         selected_table = st.selectbox("Table", options=st.session_state.tables) if st.session_state.tables else None
 
@@ -136,4 +145,4 @@ if st.session_state.conn:
         except Exception as e:
             st.error(f"Query failed: {e}")
 else:
-    st.info("Enter your connection details in the sidebar and click Connect.")
+    st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
