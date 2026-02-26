@@ -137,7 +137,3 @@
 +            st.error(f"Query failed: {e}")
 +else:
 +    st.info("Enter your connection details in the sidebar and click Connect.")
- 
- EOF
- )
-
