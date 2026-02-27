@@ -68,7 +68,7 @@ def load_tables(database_name: str) -> None:
     st.session_state.tables = tables_df["table_name"].tolist() if "table_name" in tables_df else []
 
 
-def connect_and_load() -> None:␊
+def connect_and_load() -> None:
     st.session_state.conn = pymysql.connect(
         host=DEFAULT_DB_CONFIG["host"],
         port=DEFAULT_DB_CONFIG["port"],
@@ -137,8 +137,13 @@ if st.session_state.conn:
             with table_col:
                 selected_table = st.selectbox("Table", options=st.session_state.tables, key="selected_table")
             with next_btn_col:
-                st.markdown("<div style='height: 1.8rem;'></div>", unsafe_allow_html=True)
-                st.button("Next", use_container_width=True, on_click=select_next_table)
+                st.write("")
+                st.button(
+                    "Next",
+                    use_container_width=True,
+                    on_click=select_next_table,
+                    disabled=len(st.session_state.tables) <= 1,
+                )
         else:
             st.session_state.selected_table = None
             selected_table = None
@@ -235,4 +240,3 @@ if st.session_state.conn:
         st.error(f"Action failed: {e}")
 else:
     st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
-
