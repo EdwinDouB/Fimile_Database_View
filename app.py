@@ -21,10 +21,25 @@ if "tables" not in st.session_state:
     st.session_state.tables = []
 if "connected_database" not in st.session_state:
     st.session_state.connected_database = ""
+if "active_action" not in st.session_state:
+    st.session_state.active_action = None
+if "action_result" not in st.session_state:
+    st.session_state.action_result = None
+if "action_title" not in st.session_state:
+    st.session_state.action_title = ""
 
 
 def run_query(sql: str, params=None) -> pd.DataFrame:
     return pd.read_sql(sql, st.session_state.conn, params=params)
+
+
+def run_scalar_query(sql: str, params=None):
+    with st.session_state.conn.cursor() as cursor:
+        cursor.execute(sql, params or [])
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return next(iter(row.values()))
 
 
 def load_tables(database_name: str) -> None:
@@ -47,8 +62,8 @@ def connect_and_load() -> None:
         autocommit=True,
     )
 
-    current_db = run_query("SELECT DATABASE() AS db_name")
-    st.session_state.connected_database = current_db.loc[0, "db_name"] or DEFAULT_DB_CONFIG["database"]
+    current_db = run_scalar_query("SELECT DATABASE() AS db_name")
+    st.session_state.connected_database = current_db or DEFAULT_DB_CONFIG["database"]
 
     if st.session_state.connected_database:
         load_tables(st.session_state.connected_database)
@@ -118,20 +133,26 @@ if st.session_state.conn:
     describe_table_btn = action_col_2.button("Describe Selected Table", use_container_width=True, disabled=not selected_table)
     count_rows_btn = action_col_3.button("Count Rows in Selected Table", use_container_width=True, disabled=not selected_table)
 
-    action_result = None
-    action_title = None
-
     try:
         if show_tables_btn:
-            action_title = "Tables"
-            action_result = run_query(
-                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s ORDER BY TABLE_NAME",
-                params=[st.session_state.connected_database],
+            st.session_state.active_action = "show_tables"
+            st.session_state.action_title = "Tables"
+            tables_offset = (page - 1) * row_limit
+            st.session_state.action_result = run_query(
+                """
+                SELECT TABLE_NAME
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = %s
+                ORDER BY TABLE_NAME
+                LIMIT %s OFFSET %s
+                """,
+                params=[st.session_state.connected_database, row_limit, tables_offset],
             )
 
         if describe_table_btn and selected_table:
-            action_title = f"Columns in `{selected_table}`"
-            action_result = run_query(
+            st.session_state.active_action = "describe_table"
+            st.session_state.action_title = f"Columns in `{selected_table}`"
+            st.session_state.action_result = run_query(
                 """
                 SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY
                 FROM INFORMATION_SCHEMA.COLUMNS
@@ -142,12 +163,26 @@ if st.session_state.conn:
             )
 
         if count_rows_btn and selected_table:
-            action_title = f"Row Count for `{selected_table}`"
-            action_result = run_query(f"SELECT COUNT(*) AS total_rows FROM `{selected_table}`")
+            st.session_state.active_action = "count_rows"
+            st.session_state.action_title = f"Row Count for `{selected_table}`"
+            st.session_state.action_result = run_query(f"SELECT COUNT(*) AS total_rows FROM `{selected_table}`")
 
-        if action_result is not None:
-            st.markdown(f"#### {action_title}")
-            st.dataframe(action_result, use_container_width=True, hide_index=True)
+        if st.session_state.active_action == "show_tables" and not show_tables_btn:
+            tables_offset = (page - 1) * row_limit
+            st.session_state.action_result = run_query(
+                """
+                SELECT TABLE_NAME
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = %s
+                ORDER BY TABLE_NAME
+                LIMIT %s OFFSET %s
+                """,
+                params=[st.session_state.connected_database, row_limit, tables_offset],
+            )
+
+        if st.session_state.action_result is not None:
+            st.markdown(f"#### {st.session_state.action_title}")
+            st.dataframe(st.session_state.action_result, use_container_width=True, hide_index=True)
     except Exception as e:
         st.error(f"Action failed: {e}")
 else:
