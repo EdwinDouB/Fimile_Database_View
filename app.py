@@ -118,9 +118,14 @@ if st.session_state.conn:
 
     if run_btn:
         try:
-            normalized = query.strip().lower()
+            normalized = query.strip().lower().rstrip(";")
             if not normalized.startswith("select") and not normalized.startswith("show") and not normalized.startswith("describe"):
                 st.warning("Only SELECT/SHOW/DESCRIBE queries are allowed in this viewer.")
+            elif normalized == "show":
+                st.warning(
+                    "`SHOW` by itself is incomplete in MySQL. Try `SHOW TABLES;`, "
+                    "`SHOW COLUMNS FROM your_table;`, or run a SELECT query."
+                )
             else:
                 result_df = run_query(query)
                 st.dataframe(result_df, use_container_width=True, hide_index=True)
@@ -128,3 +133,4 @@ if st.session_state.conn:
             st.error(f"Query failed: {e}")
 else:
     st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
+
