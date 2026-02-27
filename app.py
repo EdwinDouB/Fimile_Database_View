@@ -1,3 +1,8 @@
+import pandas as pd
+import pymysql
+import streamlit as st
+
+
 DEFAULT_DB_CONFIG = {
     "host": "47.253.206.87",
     "port": 3306,
@@ -22,8 +27,6 @@ if "action_result" not in st.session_state:
     st.session_state.action_result = None
 if "action_title" not in st.session_state:
     st.session_state.action_title = ""
-if "selected_table" not in st.session_state:
-    st.session_state.selected_table = None
 
 
 def run_query(sql: str, params=None) -> pd.DataFrame:
@@ -61,11 +64,6 @@ def load_tables(database_name: str) -> None:
         params=[database_name],
     )
     st.session_state.tables = tables_df["table_name"].tolist() if "table_name" in tables_df else []
-
-    if not st.session_state.tables:
-        st.session_state.selected_table = None
-    elif st.session_state.selected_table not in st.session_state.tables:
-        st.session_state.selected_table = st.session_state.tables[0]
 
 
 def connect_and_load() -> None:
@@ -113,23 +111,7 @@ if st.session_state.conn:
         st.subheader("Schema")
         st.text(f"Active database: {st.session_state.connected_database}")
 
-        table_col, next_btn_col = st.columns([5, 1])
-        with table_col:
-            if st.session_state.tables:
-                selected_table = st.selectbox("Table", options=st.session_state.tables, key="selected_table")
-            else:
-                selected_table = None
-        with next_btn_col:
-            st.write("")
-            st.write("")
-            next_table_btn = st.button("Next", use_container_width=True, disabled=not st.session_state.tables)
-
-        if next_table_btn and st.session_state.tables:
-            current_index = st.session_state.tables.index(st.session_state.selected_table)
-            next_index = (current_index + 1) % len(st.session_state.tables)
-            st.session_state.selected_table = st.session_state.tables[next_index]
-            selected_table = st.session_state.selected_table
-            st.rerun()
+        selected_table = st.selectbox("Table", options=st.session_state.tables) if st.session_state.tables else None
 
         row_limit = st.slider("Rows per page", min_value=10, max_value=500, value=100, step=10)
         page = st.number_input("Page", min_value=1, value=1, step=1)
@@ -155,4 +137,71 @@ if st.session_state.conn:
 
                 total_count_df = run_query(f"SELECT COUNT(*) AS total_rows FROM {selected_table_sql}")
                 total_rows = int(total_count_df.loc[0, "total_rows"])
+                st.caption(f"Showing {len(df)} row(s) out of {total_rows:,} total row(s).")
+            except Exception as e:
+                st.error(f"Failed to read table: {e}")
 
+    st.divider()
+    st.subheader("Database Actions")
+    st.caption("Run common database operations using buttons and dropdowns instead of manual SQL commands.")
+
+    action_col_1, action_col_2, action_col_3 = st.columns(3)
+    show_tables_btn = action_col_1.button("Show Tables", use_container_width=True)
+    describe_table_btn = action_col_2.button("Describe Selected Table", use_container_width=True, disabled=not selected_table)
+    count_rows_btn = action_col_3.button("Count Rows in Selected Table", use_container_width=True, disabled=not selected_table)
+
+    try:
+        if show_tables_btn:
+            st.session_state.active_action = "show_tables"
+            st.session_state.action_title = "Tables"
+            tables_offset = (page - 1) * row_limit
+            st.session_state.action_result = run_query(
+                """
+                SELECT TABLE_NAME AS table_name
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = %s
+                ORDER BY TABLE_NAME
+                LIMIT %s OFFSET %s
+                """,
+                params=[st.session_state.connected_database, row_limit, tables_offset],
+            )
+
+        if describe_table_btn and selected_table:
+            st.session_state.active_action = "describe_table"
+            st.session_state.action_title = f"Columns in `{selected_table}`"
+            st.session_state.action_result = run_query(
+                """
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                ORDER BY ORDINAL_POSITION
+                """,
+                params=[st.session_state.connected_database, selected_table],
+            )
+
+        if count_rows_btn and selected_table:
+            st.session_state.active_action = "count_rows"
+            st.session_state.action_title = f"Row Count for `{selected_table}`"
+            selected_table_sql = quote_identifier(selected_table)
+            st.session_state.action_result = run_query(f"SELECT COUNT(*) AS total_rows FROM {selected_table_sql}")
+
+        if st.session_state.active_action == "show_tables" and not show_tables_btn:
+            tables_offset = (page - 1) * row_limit
+            st.session_state.action_result = run_query(
+                """
+                SELECT TABLE_NAME AS table_name
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = %s
+                ORDER BY TABLE_NAME
+                LIMIT %s OFFSET %s
+                """,
+                params=[st.session_state.connected_database, row_limit, tables_offset],
+            )
+
+        if st.session_state.action_result is not None:
+            st.markdown(f"#### {st.session_state.action_title}")
+            st.dataframe(st.session_state.action_result, use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.error(f"Action failed: {e}")
+else:
+    st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
