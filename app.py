@@ -27,6 +27,8 @@ if "action_result" not in st.session_state:
     st.session_state.action_result = None
 if "action_title" not in st.session_state:
     st.session_state.action_title = ""
+if "selected_table" not in st.session_state:
+    st.session_state.selected_table = None
 
 
 def run_query(sql: str, params=None) -> pd.DataFrame:
@@ -66,7 +68,7 @@ def load_tables(database_name: str) -> None:
     st.session_state.tables = tables_df["table_name"].tolist() if "table_name" in tables_df else []
 
 
-def connect_and_load() -> None:
+def connect_and_load() -> None:␊
     st.session_state.conn = pymysql.connect(
         host=DEFAULT_DB_CONFIG["host"],
         port=DEFAULT_DB_CONFIG["port"],
@@ -83,6 +85,22 @@ def connect_and_load() -> None:
 
     if st.session_state.connected_database:
         load_tables(st.session_state.connected_database)
+
+
+def select_next_table() -> None:
+    tables = st.session_state.tables
+    if not tables:
+        st.session_state.selected_table = None
+        return
+
+    current_table = st.session_state.get("selected_table")
+    if current_table not in tables:
+        st.session_state.selected_table = tables[0]
+        return
+
+    current_index = tables.index(current_table)
+    next_index = (current_index + 1) % len(tables)
+    st.session_state.selected_table = tables[next_index]
 
 
 with st.sidebar:
@@ -111,7 +129,19 @@ if st.session_state.conn:
         st.subheader("Schema")
         st.text(f"Active database: {st.session_state.connected_database}")
 
-        selected_table = st.selectbox("Table", options=st.session_state.tables) if st.session_state.tables else None
+        if st.session_state.tables:
+            if st.session_state.selected_table not in st.session_state.tables:
+                st.session_state.selected_table = st.session_state.tables[0]
+
+            table_col, next_btn_col = st.columns([4, 1])
+            with table_col:
+                selected_table = st.selectbox("Table", options=st.session_state.tables, key="selected_table")
+            with next_btn_col:
+                st.markdown("<div style='height: 1.8rem;'></div>", unsafe_allow_html=True)
+                st.button("Next", use_container_width=True, on_click=select_next_table)
+        else:
+            st.session_state.selected_table = None
+            selected_table = None
 
         row_limit = st.slider("Rows per page", min_value=10, max_value=500, value=100, step=10)
         page = st.number_input("Page", min_value=1, value=1, step=1)
@@ -205,3 +235,4 @@ if st.session_state.conn:
         st.error(f"Action failed: {e}")
 else:
     st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
+
