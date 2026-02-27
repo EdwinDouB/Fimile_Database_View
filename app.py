@@ -103,6 +103,22 @@ def select_next_table() -> None:
     st.session_state.selected_table = tables[next_index]
 
 
+def select_previous_table() -> None:
+    tables = st.session_state.tables
+    if not tables:
+        st.session_state.selected_table = None
+        return
+
+    current_table = st.session_state.get("selected_table")
+    if current_table not in tables:
+        st.session_state.selected_table = tables[0]
+        return
+
+    current_index = tables.index(current_table)
+    previous_index = (current_index - 1) % len(tables)
+    st.session_state.selected_table = tables[previous_index]
+
+
 with st.sidebar:
     st.header("Connection")
     st.text(f"Host: {DEFAULT_DB_CONFIG['host']}")
@@ -133,9 +149,17 @@ if st.session_state.conn:
             if st.session_state.selected_table not in st.session_state.tables:
                 st.session_state.selected_table = st.session_state.tables[0]
 
-            table_col, next_btn_col = st.columns([4, 1])
+            table_col, previous_btn_col, next_btn_col = st.columns([4, 1, 1])
             with table_col:
                 selected_table = st.selectbox("Table", options=st.session_state.tables, key="selected_table")
+            with previous_btn_col:
+                st.write("")
+                st.button(
+                    "Previous",
+                    use_container_width=True,
+                    on_click=select_previous_table,
+                    disabled=len(st.session_state.tables) <= 1,
+                )
             with next_btn_col:
                 st.write("")
                 st.button(
