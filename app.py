@@ -50,7 +50,7 @@ def quote_identifier(identifier: str) -> str:
     return f"`{identifier.replace('`', '``')}`"
 
 
-def load_tables(database_name: str) -> None:␊
+def load_tables(database_name: str) -> None:
     tables_df = run_query(
         """
         SELECT TABLE_NAME AS table_name
@@ -155,3 +155,4 @@ if st.session_state.conn:
 
                 total_count_df = run_query(f"SELECT COUNT(*) AS total_rows FROM {selected_table_sql}")
                 total_rows = int(total_count_df.loc[0, "total_rows"])
+
