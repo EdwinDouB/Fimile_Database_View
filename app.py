@@ -110,27 +110,45 @@ if st.session_state.conn:
                 st.error(f"Failed to read table: {e}")
 
     st.divider()
-    st.subheader("SQL Console (Read-only expected)")
-    st.caption("Use SELECT statements to inspect data.")
+    st.subheader("Database Actions")
+    st.caption("Run common database operations using buttons and dropdowns instead of manual SQL commands.")
 
-    query = st.text_area("SQL Query", value="SELECT 1;", height=160)
-    run_btn = st.button("Run Query")
+    action_col_1, action_col_2, action_col_3 = st.columns(3)
+    show_tables_btn = action_col_1.button("Show Tables", use_container_width=True)
+    describe_table_btn = action_col_2.button("Describe Selected Table", use_container_width=True, disabled=not selected_table)
+    count_rows_btn = action_col_3.button("Count Rows in Selected Table", use_container_width=True, disabled=not selected_table)
 
-    if run_btn:
-        try:
-            normalized = query.strip().lower().rstrip(";")
-            if not normalized.startswith("select") and not normalized.startswith("show") and not normalized.startswith("describe"):
-                st.warning("Only SELECT/SHOW/DESCRIBE queries are allowed in this viewer.")
-            elif normalized == "show":
-                st.warning(
-                    "`SHOW` by itself is incomplete in MySQL. Try `SHOW TABLES;`, "
-                    "`SHOW COLUMNS FROM your_table;`, or run a SELECT query."
-                )
-            else:
-                result_df = run_query(query)
-                st.dataframe(result_df, use_container_width=True, hide_index=True)
-        except Exception as e:
-            st.error(f"Query failed: {e}")
+    action_result = None
+    action_title = None
+
+    try:
+        if show_tables_btn:
+            action_title = "Tables"
+            action_result = run_query(
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s ORDER BY TABLE_NAME",
+                params=[st.session_state.connected_database],
+            )
+
+        if describe_table_btn and selected_table:
+            action_title = f"Columns in `{selected_table}`"
+            action_result = run_query(
+                """
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                ORDER BY ORDINAL_POSITION
+                """,
+                params=[st.session_state.connected_database, selected_table],
+            )
+
+        if count_rows_btn and selected_table:
+            action_title = f"Row Count for `{selected_table}`"
+            action_result = run_query(f"SELECT COUNT(*) AS total_rows FROM `{selected_table}`")
+
+        if action_result is not None:
+            st.markdown(f"#### {action_title}")
+            st.dataframe(action_result, use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.error(f"Action failed: {e}")
 else:
     st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
-
