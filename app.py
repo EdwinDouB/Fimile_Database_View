@@ -30,7 +30,14 @@ if "action_title" not in st.session_state:
 
 
 def run_query(sql: str, params=None) -> pd.DataFrame:
-    return pd.read_sql(sql, st.session_state.conn, params=params)
+    with st.session_state.conn.cursor() as cursor:
+        cursor.execute(sql, params or [])
+        rows = cursor.fetchall()
+        if rows:
+            return pd.DataFrame(rows)
+
+        columns = [col[0] for col in (cursor.description or [])]
+        return pd.DataFrame(columns=columns)
 
 
 def run_scalar_query(sql: str, params=None):
@@ -42,12 +49,21 @@ def run_scalar_query(sql: str, params=None):
         return next(iter(row.values()))
 
 
+def quote_identifier(identifier: str) -> str:
+    return f"`{identifier.replace('`', '``')}`"
+
+
 def load_tables(database_name: str) -> None:
     tables_df = run_query(
-        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s ORDER BY TABLE_NAME",
+        """
+        SELECT TABLE_NAME AS table_name
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = %s
+        ORDER BY TABLE_NAME
+        """,
         params=[database_name],
     )
-    st.session_state.tables = tables_df["TABLE_NAME"].tolist()
+    st.session_state.tables = tables_df["table_name"].tolist() if "table_name" in tables_df else []
 
 
 def connect_and_load() -> None:
@@ -104,7 +120,8 @@ if st.session_state.conn:
         if selected_table:
             st.subheader(f"Table Preview: `{selected_table}`")
             offset = (page - 1) * row_limit
-            preview_query = f"SELECT * FROM `{selected_table}` LIMIT {row_limit} OFFSET {offset}"
+            selected_table_sql = quote_identifier(selected_table)
+            preview_query = f"SELECT * FROM {selected_table_sql} LIMIT {row_limit} OFFSET {offset}"
 
             try:
                 df = run_query(preview_query)
@@ -118,7 +135,7 @@ if st.session_state.conn:
                     mime="text/csv",
                 )
 
-                total_count_df = run_query(f"SELECT COUNT(*) AS total_rows FROM `{selected_table}`")
+                total_count_df = run_query(f"SELECT COUNT(*) AS total_rows FROM {selected_table_sql}")
                 total_rows = int(total_count_df.loc[0, "total_rows"])
                 st.caption(f"Showing {len(df)} row(s) out of {total_rows:,} total row(s).")
             except Exception as e:
@@ -140,7 +157,7 @@ if st.session_state.conn:
             tables_offset = (page - 1) * row_limit
             st.session_state.action_result = run_query(
                 """
-                SELECT TABLE_NAME
+                SELECT TABLE_NAME AS table_name
                 FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_SCHEMA = %s
                 ORDER BY TABLE_NAME
@@ -165,13 +182,14 @@ if st.session_state.conn:
         if count_rows_btn and selected_table:
             st.session_state.active_action = "count_rows"
             st.session_state.action_title = f"Row Count for `{selected_table}`"
-            st.session_state.action_result = run_query(f"SELECT COUNT(*) AS total_rows FROM `{selected_table}`")
+            selected_table_sql = quote_identifier(selected_table)
+            st.session_state.action_result = run_query(f"SELECT COUNT(*) AS total_rows FROM {selected_table_sql}")
 
         if st.session_state.active_action == "show_tables" and not show_tables_btn:
             tables_offset = (page - 1) * row_limit
             st.session_state.action_result = run_query(
                 """
-                SELECT TABLE_NAME
+                SELECT TABLE_NAME AS table_name
                 FROM INFORMATION_SCHEMA.TABLES
                 WHERE TABLE_SCHEMA = %s
                 ORDER BY TABLE_NAME
