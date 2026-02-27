@@ -54,7 +54,7 @@ def quote_identifier(identifier: str) -> str:
     return f"`{identifier.replace('`', '``')}`"
 
 
-def load_tables(database_name: str) -> None:␊
+def load_tables(database_name: str) -> None:
     tables_df = run_query(
         """
         SELECT TABLE_NAME AS table_name
@@ -227,4 +227,5 @@ if st.session_state.conn:
         st.error(f"Action failed: {e}")
 else:
     st.error("Could not connect automatically. Click Reconnect in the sidebar to retry.")
+
 
